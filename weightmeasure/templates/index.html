@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>AI Smart Scale Project</title>
+    <style>
+        /* Basic styling for scannability and presentation */
+        body { font-family: sans-serif; text-align: center; margin-top: 20px; background-color: #f4f4f9; }
+        .container { max-width: 700px; margin: auto; padding: 20px; background-color: white; border-radius: 10px; box-shadow: 0 4px 8px rgba(0,0,0,0.1); }
+        #weightDisplay { font-size: 3em; color: #4CAF50; margin: 10px 0; font-weight: bold; }
+        #recipeOutput { white-space: pre-wrap; text-align: left; background: #e0f7fa; padding: 15px; border-radius: 8px; margin-top: 20px; min-height: 100px; border: 1px solid #b2ebf2; }
+        .input-group, .list-item { display: flex; align-items: center; margin-bottom: 10px; }
+        .input-group input { flex-grow: 1; padding: 10px; border: 1px solid #ccc; border-radius: 5px 0 0 5px; }
+        .input-group button, .list-item button { padding: 10px 15px; border: none; cursor: pointer; border-radius: 0 5px 5px 0; font-weight: bold; }
+        #addButton { background-color: #007BFF; color: white; border-radius: 0 5px 5px 0; }
+        #recipeButton { width: 100%; padding: 12px; background-color: #FFC107; color: #333; border-radius: 5px; margin-top: 15px; font-size: 1.1em; }
+        .list-item { justify-content: space-between; padding: 8px; background: #f0f0f0; border-radius: 5px; }
+        .list-item button { background-color: #dc3545; color: white; border-radius: 5px; margin-left: 10px; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h2>AI Smart Scale Assistant</h2>
+    <p>Live Weight on Scale:</p>
+    <div id="weightDisplay">--.- g</div>
+    <hr>
+    <div class="input-group">
+        <input type="text" id="ingredientInput" placeholder="What is this ingredient? (e.g., Flour)">
+        <button id="addButton" onclick="addIngredient()">+</button>
+    </div>
+    <h3>Your Inventory</h3>
+    <ul id="ingredientList"></ul>
+    <button id="recipeButton" onclick="requestRecipe()">Look for Recipes!</button>
+    <hr>
+    <h3>Generated Recipe:</h3>
+    <pre id="recipeOutput">The recipe will appear here after you press the button.</pre>
+</div>
+<script>
+    const weightDisplay = document.getElementById('weightDisplay');
+    const ingredientInput = document.getElementById('ingredientInput');
+    const ingredientListElement = document.getElementById('ingredientList');
+    const recipeOutput = document.getElementById('recipeOutput');
+    
+    // Global state variables
+    let currentWeight = 0;
+    let inventory = []; //This array holds { name, weight } objects
+
+    //1. Fetches weight from the Flask server
+    async function fetchWeight() {
+        try {
+            const response = await fetch('/get_weight');
+            const data = await response.json();
+            
+            currentWeight = data.weight; // Update global weight
+            weightDisplay.textContent = `${currentWeight} g`;
+            
+        } catch (error) {
+            console.error('Error fetching weight:', error);
+            weightDisplay.textContent = 'Error fetching weight (Check server)';
+        }
+    }
+
+    //2. Adds the current item to the inventory list
+    function addIngredient() {
+        const name = ingredientInput.value.trim();
+        
+        if (!name || currentWeight <= 0) {
+            alert("Please type an ingredient name and place an item on the scale (must be > 0g)!");
+            return;
+        }
+        //Add new ingredient to the inventory
+        inventory.push({ 
+            name: name, 
+            weight: currentWeight 
+        });
+        //Clear input and re-render the list
+        ingredientInput.value = '';
+        renderList();
+    }
+
+    //3. Removes an item from the inventory list
+    function deleteIngredient(index) {
+        //Splice removes 1 item starting at the given index
+        inventory.splice(index, 1);
+        renderList();
+    }
+
+    //4. Renders the inventory array to the HTML list
+    function renderList() {
+        ingredientListElement.innerHTML = ''; //Clear existing list items
+        if (inventory.length === 0) {
+            ingredientListElement.innerHTML = '<li>Inventory is empty. Add an ingredient!</li>';
+            return;
+        }
+
+        inventory.forEach((item, index) => {
+            const listItem = document.createElement('li');
+            listItem.className = 'list-item';
+            
+            //Display the item details
+            listItem.innerHTML = `
+                <span>${item.name} (${item.weight} g)</span>
+                <button onclick="deleteIngredient(${index})">-</button>
+            `;
+            ingredientListElement.appendChild(listItem);
+        });
+    }
+
+    //5. Sends the entire inventory list to the server for recipe generation
+    async function requestRecipe() {
+        if (inventory.length === 0) {
+            alert("Please add at least one ingredient to your inventory first!");
+            return;
+        }
+        recipeOutput.textContent = 'Contacting AI... generating recipe...';
+        try {
+            const response = await fetch('/get_recipe', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                // Send the entire inventory array!
+                body: JSON.stringify({ inventory: inventory })
+            });
+            const data = await response.json();
+            if (data.error) {
+                recipeOutput.textContent = `Error: ${data.error}`;
+            } else {
+                recipeOutput.textContent = data.recipe;
+            }
+
+        } catch (error) {
+            console.error('Error getting recipe:', error);
+            recipeOutput.textContent = 'An error occurred while connecting to the server.';
+        }
+    }
+
+    //Initialization
+    setInterval(fetchWeight, 1000); //Fetch weight every second
+    fetchWeight();
+    renderList(); //Empty list on load
+
+</script>
+
+</body>
+</html>
